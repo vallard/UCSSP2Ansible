@@ -14,3 +14,12 @@ pip install ucsmsdk
 ## Notes
 
 Work in progress.  At present most values are hard coded and will be updated as it starts to work.  In fact, right now, practically nothing works.   
+
+## Supported
+
+| Category | Task                     | Module Name                | Status |
+| -------- | ----                     | -----------                | ------ |
+| Server   | Service Profile          | cisco\_ucs\_sp             | [x]    |
+|          | Service Profile Template | cisco\_ucs\_spt            | [x] |
+|          | Bios Scrub Policy        | cisco\_ucs\_scrub_policy   | [x] |
+|          | vMedia Policy            | cisco\_ucs\_vmedia\_policy | [x] |
