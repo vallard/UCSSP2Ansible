@@ -71,11 +71,57 @@ def select_sp(h):
                 return sps[int(sp) -1]
 
 # take out the org-root/ part out of name.
-def sub_root(part, dn):
-    return dn.replace("org-root/%s" % part, "")
+def sub_root(org, part, dn):
+    return dn.replace("%s/%s" % (org, part), "")
 
 
-def create_sp_playbook(sp, ts):
+def ansible_ucs_login(ts):
+    return " "*ts + "ucs_ip: {{ucs_ip}}" + "\n" + " "*ts + "ucs_username: {{ ucs_username }}" + "\n" + " "*ts + "ucs_password: {{ ucs_password }}" 
+    
+
+def create_scrub(h, org, ts, scrub_policy_name):
+    sp = h.query_dn(scrub_policy_name)
+    print " "*ts + "- name: Ensure scrub policy is created"
+    print " "*ts + "  cisco_ucs_scrub_policy:"
+    print " "*(ts*2) + "name: %s" % sub_root(org, "scrub-", scrub_policy_name)
+    print " "*(ts*2) + "descr: %s" % sp.descr
+    print " "*(ts*2) + "disk_scrub: %s" % sp.disk_scrub
+    print " "*(ts*2) + "flex_flash_scrub: %s" % sp.flex_flash_scrub
+    print " "*(ts*2) + "bios_settings_scrub: %s" % sp.bios_settings_scrub
+    
+def create_vmedia(h, org, ts, policy_name):
+    from ucsmsdk.mometa.cimcvmedia.CimcvmediaMountConfigPolicy import CimcvmediaMountConfigPolicy
+    from ucsmsdk.mometa.cimcvmedia.CimcvmediaConfigMountEntry import CimcvmediaConfigMountEntry
+    mo = h.query_dn(policy_name,  hierarchy=True)
+    cfg_policy = ""
+    mnt_entries = []
+    for i in mo:
+        if type(i) is CimcvmediaMountConfigPolicy:
+           cfg_policy = i 
+        elif type(i) is CimcvmediaConfigMountEntry:
+            mnt_entries.append(i)
+    if cfg_policy == "":
+        return
+    print " "*ts + "- name: Ensure vmedia policy is created"
+    print " "*ts + "  cisco_ucs_vmedia_policy:"
+    print " "*(ts*2) + "name: %s" % sub_root(org, "mnt-cfg-policy-", policy_name)
+    print " "*(ts*2) + "descr: %s" % cfg_policy.descr
+    print " "*(ts*2) + "retry: %s" % cfg_policy.retry_on_mount_fail
+    if len(mnt_entries) > 0:
+        print " "*(ts*2) + "mounts: "
+        for i in mnt_entries:
+            print i
+            print " "*(ts*2) + "- name: %s" % i.mapping_name
+            #print " "*(ts*3) + "descr: %s" % i.descr
+            print " "*(ts*3) + "device: %s" % i.device_type
+            print " "*(ts*3) + "protocol: %s" % i.mount_protocol
+            print " "*(ts*3) + "remote_ip: %s" % i.remote_ip_address
+            print " "*(ts*3) + "file: %s" % "variable" if i.image_name_variable == "service-profile-name" else i.image_file_name
+            print " "*(ts*3) + "path: %s" % i.image_path
+            
+
+
+def create_sp_playbook(h, org, sp, ts):
     print " "*ts + "- name: Create SP %s" % sp.name
     if sp.type == "updating-template":
         print " "*(ts*2) + "cisco_ucs_spt:"
@@ -86,19 +132,21 @@ def create_sp_playbook(sp, ts):
         print " "*(ts*2) + "cisco_ucs_sp:"
         print " "*(ts*3) + "sp_list:"
         print " "*(ts*3) + "- name: %s" % sp.name
+        print ansible_ucs_login(ts*3)
     if sp.oper_scrub_policy_name:
-        print " "*(ts*4) + "scrub_policy: %s" % sub_root("scrub-", sp.oper_scrub_policy_name)
-
-
+        print " "*(ts*4) + "scrub_policy: %s" % sub_root(org, "scrub-", sp.oper_scrub_policy_name)
+        create_scrub(h, org, ts, sp.oper_scrub_policy_name)
+    if sp.oper_vmedia_policy_name:
+        print " "*(ts*4) + "vmedia_policy: %s" % sub_root(org, "mnt-cfg-policy-", sp.oper_vmedia_policy_name)
+        create_vmedia(h, org, ts, sp.oper_vmedia_policy_name)
 
 
 h, msg = login('admin', 'nbv12345', '172.28.225.163')
 #sp = select_sp(h)
 sp = get_sp(h, "KUBAM-ESXi")
-
-create_sp_playbook(sp, 2)
+create_sp_playbook(h, "org-root", sp, 2)
    
-print sp 
+#print sp 
 #for prop, prop_value in ucsgenutils.iteritems(sp.__json__()):
 #    print prop, prop_value
 #for i in sp.mos:
