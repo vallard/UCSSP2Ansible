@@ -110,9 +110,7 @@ def create_vmedia(h, org, ts, policy_name):
     if len(mnt_entries) > 0:
         print " "*(ts*2) + "mounts: "
         for i in mnt_entries:
-            print i
             print " "*(ts*2) + "- name: %s" % i.mapping_name
-            #print " "*(ts*3) + "descr: %s" % i.descr
             print " "*(ts*3) + "device: %s" % i.device_type
             print " "*(ts*3) + "protocol: %s" % i.mount_protocol
             print " "*(ts*3) + "remote_ip: %s" % i.remote_ip_address
@@ -146,10 +144,4 @@ h, msg = login('admin', 'nbv12345', '172.28.225.163')
 sp = get_sp(h, "KUBAM-ESXi")
 create_sp_playbook(h, "org-root", sp, 2)
    
-#print sp 
-#for prop, prop_value in ucsgenutils.iteritems(sp.__json__()):
-#    print prop, prop_value
-#for i in sp.mos:
-#    print i
-
 logout(h)
