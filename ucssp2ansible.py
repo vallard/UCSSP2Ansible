@@ -117,6 +117,8 @@ def create_vmedia(h, org, ts, policy_name):
             print " "*(ts*3) + "file: %s" % "variable" if i.image_name_variable == "service-profile-name" else i.image_file_name
             print " "*(ts*3) + "path: %s" % i.image_path
             
+def create_bios_policy(h, org, ts, policy_name):
+    print "TODO" 
 
 
 def create_sp_playbook(h, org, sp, ts):
@@ -137,11 +139,15 @@ def create_sp_playbook(h, org, sp, ts):
     if sp.oper_vmedia_policy_name:
         print " "*(ts*4) + "vmedia_policy: %s" % sub_root(org, "mnt-cfg-policy-", sp.oper_vmedia_policy_name)
         create_vmedia(h, org, ts, sp.oper_vmedia_policy_name)
+    if sp.oper_bios_profile_name:
+        print " "*(ts*4) + "bios_policy: %s" % sub_root(org, "bios-prof-oper-", sp.oper_bios_profile_name)
+        create_bios_policy(h, org, ts, sp.oper_bios_profile_name)
 
 
 h, msg = login('admin', 'nbv12345', '172.28.225.163')
 #sp = select_sp(h)
 sp = get_sp(h, "KUBAM-ESXi")
 create_sp_playbook(h, "org-root", sp, 2)
+print sp
    
 logout(h)
