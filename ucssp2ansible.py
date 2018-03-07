@@ -6,6 +6,7 @@ from ucsmsdk import ucsgenutils
 import socket
 from urllib2 import HTTPError
 import os, sys
+import argparse
 
 # returns handle, "error message"
 def login(username, password, server):
@@ -54,7 +55,11 @@ def get_sp(h, sp_name):
     # filters: https://github.com/CiscoUcs/ucsmsdk/blob/master/ucsmsdk/ucsfilter.py
     filter_string = '(dn, "root/ls-%s", type="re")' % sp_name
     sp = h.query_classid("lsServer", filter_string)
-    return sp[0]
+    try:
+        return sp[0]
+    except IndexError as e:
+        return ""
+
     
 
 def select_sp(h):
@@ -76,23 +81,26 @@ def sub_root(org, part, dn):
 
 
 def ansible_ucs_login(ts):
-    return " "*ts + "ucs_ip: {{ucs_ip}}" + "\n" + " "*ts + "ucs_username: {{ ucs_username }}" + "\n" + " "*ts + "ucs_password: {{ ucs_password }}" 
+    return " "*ts + "ucs_ip: {{ucs_ip}}" + "\n" + " "*ts + "ucs_username: {{ ucs_username }}" + "\n" + " "*ts + "ucs_password: {{ ucs_password }}\n" 
     
 
 def create_scrub(h, org, ts, scrub_policy_name):
     sp = h.query_dn(scrub_policy_name)
-    print " "*ts + "- name: Ensure scrub policy is created"
-    print " "*ts + "  cisco_ucs_scrub_policy:"
-    print " "*(ts*2) + "name: %s" % sub_root(org, "scrub-", scrub_policy_name)
-    print " "*(ts*2) + "descr: %s" % sp.descr
-    print " "*(ts*2) + "disk_scrub: %s" % sp.disk_scrub
-    print " "*(ts*2) + "flex_flash_scrub: %s" % sp.flex_flash_scrub
-    print " "*(ts*2) + "bios_settings_scrub: %s" % sp.bios_settings_scrub
+    rs = " "*ts + "- name: Ensure scrub policy is created\n"
+    rs += " "*ts + "  cisco_ucs_scrub_policy:\n"
+    rs += " "*(ts*3) + "name: %s\n" % sub_root(org, "scrub-", scrub_policy_name) 
+    rs += " "*(ts*3) + "descr: %s\n" % sp.descr
+    rs += " "*(ts*3) + "disk_scrub: %s\n" % sp.disk_scrub
+    rs += " "*(ts*3) + "flex_flash_scrub: %s\n" % sp.flex_flash_scrub
+    rs += " "*(ts*3) + "bios_settings_scrub: %s\n" % sp.bios_settings_scrub
+    rs += ansible_ucs_login(ts*3)
+    return rs
     
 def create_vmedia(h, org, ts, policy_name):
     from ucsmsdk.mometa.cimcvmedia.CimcvmediaMountConfigPolicy import CimcvmediaMountConfigPolicy
     from ucsmsdk.mometa.cimcvmedia.CimcvmediaConfigMountEntry import CimcvmediaConfigMountEntry
     mo = h.query_dn(policy_name,  hierarchy=True)
+    rs = ""
     cfg_policy = ""
     mnt_entries = []
     for i in mo:
@@ -102,52 +110,130 @@ def create_vmedia(h, org, ts, policy_name):
             mnt_entries.append(i)
     if cfg_policy == "":
         return
-    print " "*ts + "- name: Ensure vmedia policy is created"
-    print " "*ts + "  cisco_ucs_vmedia_policy:"
-    print " "*(ts*2) + "name: %s" % sub_root(org, "mnt-cfg-policy-", policy_name)
-    print " "*(ts*2) + "descr: %s" % cfg_policy.descr
-    print " "*(ts*2) + "retry: %s" % cfg_policy.retry_on_mount_fail
+    rs += " "*ts + "- name: Ensure vmedia policy is created\n"
+    rs += " "*(ts*2) + "cisco_ucs_vmedia_policy:\n"
+    rs += " "*(ts*3) + "name: %s\n" % sub_root(org, "mnt-cfg-policy-", policy_name)
+    rs += " "*(ts*3) + "descr: %s\n" % cfg_policy.descr
+    rs += " "*(ts*3) + "retry: %s\n" % cfg_policy.retry_on_mount_fail
     if len(mnt_entries) > 0:
-        print " "*(ts*2) + "mounts: "
+        rs += " "*(ts*3) + "mounts: \n"
         for i in mnt_entries:
-            print " "*(ts*2) + "- name: %s" % i.mapping_name
-            print " "*(ts*3) + "device: %s" % i.device_type
-            print " "*(ts*3) + "protocol: %s" % i.mount_protocol
-            print " "*(ts*3) + "remote_ip: %s" % i.remote_ip_address
-            print " "*(ts*3) + "file: %s" % "variable" if i.image_name_variable == "service-profile-name" else i.image_file_name
-            print " "*(ts*3) + "path: %s" % i.image_path
+            rs += " "*(ts*3) + "- name: %s\n" % i.mapping_name
+            rs += " "*(ts*4) + "device: %s\n" % i.device_type
+            rs += " "*(ts*4) + "protocol: %s\n" % i.mount_protocol
+            rs += " "*(ts*4) + "remote_ip: %s\n" % i.remote_ip_address
+            rs += " "*(ts*4) + "file: variable\n" if i.image_name_variable == "service-profile-name" else " "*(ts*4) + "file: %s\n" % i.image_file_name
+            rs += " "*(ts*4) + "path: %s\n" % i.image_path
+    rs += ansible_ucs_login(ts*3)
+    return rs
             
 def create_bios_policy(h, org, ts, policy_name):
-    print "TODO" 
+    from ucsmsdk.mometa.bios.BiosVProfile import BiosVProfile
+    from ucsmsdk.mometa.bios.BiosVfConsistentDeviceNameControl import BiosVfConsistentDeviceNameControl
+    from ucsmsdk.mometa.bios.BiosVfFrontPanelLockout import BiosVfFrontPanelLockout
+    from ucsmsdk.mometa.bios.BiosVfPOSTErrorPause import BiosVfPOSTErrorPause
+    from ucsmsdk.mometa.bios.BiosVfQuietBoot import BiosVfQuietBoot
+    from ucsmsdk.mometa.bios.BiosVfResumeOnACPowerLoss import BiosVfResumeOnACPowerLoss
+    mo = h.query_dn(policy_name, hierarchy=True)
+    rs = ""
+    bp = "" 
+    cdnCtrl = ""
+    pl = ""
+    for i in mo:
+        if type(i) is BiosVProfile:
+            bp = i
+        elif type(i) is BiosVfConsistentDeviceNameControl:
+            cdnCtrl = i
+        elif type(i) is BiosVfResumeOnACPowerLoss:
+            pl = i
 
+    rs += " "*ts + "- name: Ensure BIOS policy %s is created\n" % sub_root(org, "bios-prof-", policy_name)
+    rs += " "*(ts*2) + "cisco_ucs_bios_policy:\n"
+    rs += " "*(ts*3) + "name: %s\n" % sub_root(org, "bios-prof-", policy_name)
+    rs += " "*(ts*3) + "descr: %s\n" % bp.descr
+    rs += " "*(ts*3) + "cdn_control: %s\n" % cdnCtrl.vp_cdn_control
+    rs += " "*(ts*3) + "reboot_on_update: %s\n" % bp.reboot_on_update
+    rs += " "*(ts*3) + "resume_on_power_loss: %s\n" % pl.vp_resume_on_ac_power_loss
+    rs += ansible_ucs_login(ts*3)
+    return rs
+
+def create_maint_policy(h, org, ts, policy_name):
+    rs = " "*ts + "- name: Ensure Maintenance policy %s is created\n" % sub_root(org, "maint-", policy_name)
+    rs += " "*(ts*2) + "cisco_ucs_maint_policy:\n"
+    rs += ansible_ucs_login(ts*3)
+    return rs
 
 def create_sp_playbook(h, org, sp, ts):
-    print " "*ts + "- name: Create SP %s" % sp.name
+    """
+    Starting point for generating Ansible Playbooks.  Starts with Service profile then 
+    service profile template. Then goes into all the other resources that make this service profile.
+    """
+    modules = ""
+    t = ""
+    t += " "*ts + "- name: Create SP %s\n" % sp.name
     if sp.type == "updating-template":
-        print " "*(ts*2) + "cisco_ucs_spt:"
-        print " "*(ts*3) + "spt_list:"
-        print " "*(ts*3) + "- name: %s" % sp.name
-        print " "*(ts*4) + "template_type: %s" % sp.type
+        t += " "*(ts*2) + "cisco_ucs_spt:\n"
+        t += " "*(ts*3) + "spt_list:\n"
+        t += " "*(ts*3) + "- name: %s\n" % sp.name
+        t += " "*(ts*4) + "template_type: %s\n" % sp.type
     else:
-        print " "*(ts*2) + "cisco_ucs_sp:"
-        print " "*(ts*3) + "sp_list:"
-        print " "*(ts*3) + "- name: %s" % sp.name
-        print ansible_ucs_login(ts*3)
+        t += " "*(ts*2) + "cisco_ucs_sp:\n"
+        t += " "*(ts*3) + "sp_list:\n"
+        t += " "*(ts*3) + "- name: %s\n" % sp.name
+        modules += ansible_ucs_login(ts*3)
     if sp.oper_scrub_policy_name:
-        print " "*(ts*4) + "scrub_policy: %s" % sub_root(org, "scrub-", sp.oper_scrub_policy_name)
-        create_scrub(h, org, ts, sp.oper_scrub_policy_name)
+        t += " "*(ts*4) + "scrub_policy: %s\n" % sub_root(org, "scrub-", sp.oper_scrub_policy_name)
+        modules += create_scrub(h, org, ts, sp.oper_scrub_policy_name)
     if sp.oper_vmedia_policy_name:
-        print " "*(ts*4) + "vmedia_policy: %s" % sub_root(org, "mnt-cfg-policy-", sp.oper_vmedia_policy_name)
-        create_vmedia(h, org, ts, sp.oper_vmedia_policy_name)
+        t += " "*(ts*4) + "vmedia_policy: %s\n" % sub_root(org, "mnt-cfg-policy-", sp.oper_vmedia_policy_name)
+        modules += create_vmedia(h, org, ts, sp.oper_vmedia_policy_name)
     if sp.oper_bios_profile_name:
-        print " "*(ts*4) + "bios_policy: %s" % sub_root(org, "bios-prof-oper-", sp.oper_bios_profile_name)
-        create_bios_policy(h, org, ts, sp.oper_bios_profile_name)
+        t += " "*(ts*4) + "bios_policy: %s\n" % sub_root(org, "bios-prof-", sp.oper_bios_profile_name)
+        modules += create_bios_policy(h, org, ts, sp.oper_bios_profile_name)
 
+    if sp.maint_policy_name:
+        t += " "*(ts*4) + "maint_policy: %s\n" % sub_root(org, "maint-", sp.oper_maint_policy_name)
+        modules += create_maint_policy(h, org, ts, sp.oper_maint_policy_name)
+    #if sp.boot_policy_name:
+    #if sp.vcon_profile_name:
+    #if sp.oper_host_fw_policy_name:
+    #if sp.host_fw_policy_name:
+    #if sp.ident_pool_name: 
+    #vnicLanConnPolicy? 
+    #oper_
 
-h, msg = login('admin', 'nbv12345', '172.28.225.163')
-#sp = select_sp(h)
-sp = get_sp(h, "KUBAM-ESXi")
-create_sp_playbook(h, "org-root", sp, 2)
-print sp
-   
-logout(h)
+    rs =  t + "\n" + modules
+    return rs
+
+def main():
+    parser = argparse.ArgumentParser(description="Connect to UCS and create Ansible Playbook from an existing Service Profile or Service Profile Template.")
+    parser.add_argument("user", help = 'The user account to log into UCS: e.g. admin')
+    parser.add_argument("password", help='The password to connect to UCS: e.g.: cisco123')
+    parser.add_argument("server", help='UCS Manager: e.g: 192.168.3.1')
+    parser.add_argument('-o', "--org",
+        type=str,
+        default='root',
+        help='The organization you want these resources created under: e.g: root')
+    parser.add_argument('-p', "--profile",
+        type=str,
+        help='The Service Profile or Profile you want to ansibilize')
+    args = parser.parse_args()
+    h, msg = login(args.user, args.password, args.server)
+    if not msg == "":
+        print msg
+        return 
+    if args.profile:
+        sp = get_sp(h, args.profile)
+        if sp == "":
+            print "no such profile: %s" % args.profile
+            sp = select_sp(h)
+    else:
+        sp = select_sp(h)
+    pb = create_sp_playbook(h, "org-" + args.org, sp, 2)
+    #print sp
+    print pb
+    logout(h)
+
+    
+if __name__ == '__main__':
+    main()
